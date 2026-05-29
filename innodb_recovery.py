@@ -1033,28 +1033,39 @@ class SDIExtractor:
         """
         candidates: List[TableSchema] = []
         seen: Set[Tuple[str, str]] = set()
+        stats = {'total_pages': 0, 'sdi_pages': 0, 'decomp_ok': 0,
+                 'parse_ok': 0, 'filtered': 0}
 
         for offset, raw in source.iter_pages():
+            stats['total_pages'] += 1
             pt = _u16(raw, FIL_PAGE_TYPE)
             if pt != PAGE_TYPE_SDI:
                 continue
+            stats['sdi_pages'] += 1
 
             text = SDIExtractor._decompress(raw)
             if text is None:
+                logging.debug(f"SDI 页 @{offset}: 解压失败")
                 continue
+            stats['decomp_ok'] += 1
 
             try:
                 obj = json.loads(text)
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
+                logging.debug(f"SDI 页 @{offset}: JSON 解析失败: {e}")
                 continue
 
             schema = SDIExtractor._parse(obj)
             if schema is None:
+                logging.debug(f"SDI 页 @{offset}: schema 提取失败")
                 continue
+            stats['parse_ok'] += 1
 
             if table_filter and table_filter.lower() not in schema.table.lower():
+                stats['filtered'] += 1
                 continue
             if schema_filter and schema_filter.lower() != schema.database.lower():
+                stats['filtered'] += 1
                 continue
 
             key = (schema.database, schema.table)
@@ -1063,6 +1074,24 @@ class SDIExtractor:
                 candidates.append(schema)
 
         if not candidates:
+            logging.error(
+                f"SDI 诊断: 共 {stats['total_pages']} 页, "
+                f"SDI 页={stats['sdi_pages']}, "
+                f"解压成功={stats['decomp_ok']}, "
+                f"解析成功={stats['parse_ok']}, "
+                f"被过滤={stats['filtered']}")
+            if stats['sdi_pages'] == 0:
+                logging.error(
+                    "文件中没有 SDI 页 — 这不是 MySQL 8.0 .ibd 文件，"
+                    "或者表已被彻底删除")
+            elif stats['decomp_ok'] == 0:
+                logging.error("SDI 页解压全部失败 — 文件可能已损坏")
+            elif stats['parse_ok'] == 0:
+                logging.error("SDI JSON 解析全部失败 — 数据字典格式异常")
+            elif stats['filtered']:
+                logging.error(
+                    "SDI 解析成功但被 --table/--database 过滤掉了，"
+                    "请检查参数是否正确")
             return None
 
         if len(candidates) == 1:
@@ -1147,7 +1176,8 @@ class SDIExtractor:
             return TableSchema(
                 database=db_name, table=table_name,
                 row_format=row_format, columns=columns)
-        except Exception:
+        except Exception as e:
+            logging.debug(f"SDI _parse 失败: {e}", exc_info=True)
             return None
 
     @staticmethod
@@ -1844,8 +1874,9 @@ def main():
             source.close()
 
         if schema is None:
-            logging.error("SDI 提取失败，请手动创建 schema.json 或用 --database 指定库名")
-            print(f"\n手动生成模板: python {sys.argv[0]} --gen-schema your_table")
+            # 详细诊断信息已在 extract_from_source 中输出
+            logging.error("SDI 提取失败（详见上方诊断），请手动创建 schema.json")
+            print(f"手动生成模板: python {sys.argv[0]} --gen-schema your_table")
             sys.exit(1)
 
         schema_name = schema.database
