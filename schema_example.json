@@ -1,0 +1,16 @@
+{
+  "table": "orders",
+  "row_format": "DYNAMIC",
+  "comment": "示例 schema，请根据实际 CREATE TABLE 语句修改",
+  "columns": [
+    {"name": "id",         "type": "bigint",        "nullable": false, "unsigned": true},
+    {"name": "user_id",    "type": "int",            "nullable": false, "unsigned": true},
+    {"name": "product_id", "type": "int",            "nullable": true,  "unsigned": true},
+    {"name": "amount",     "type": "decimal(10,2)",  "nullable": true},
+    {"name": "quantity",   "type": "smallint",       "nullable": false, "unsigned": true},
+    {"name": "status",     "type": "varchar(32)",    "nullable": true,  "charset": "utf8mb4"},
+    {"name": "note",       "type": "text",           "nullable": true,  "charset": "utf8mb4"},
+    {"name": "created_at", "type": "datetime",       "nullable": false},
+    {"name": "updated_at", "type": "datetime",       "nullable": true}
+  ]
+}
